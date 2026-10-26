@@ -6356,6 +6356,7 @@ dependencies = [
  "serde",
  "serde_json",
  "toml",
+ "unicode-normalization",
  "vectorcraft-brush",
  "vectorcraft-cad",
  "vectorcraft-color",

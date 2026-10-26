@@ -48,6 +48,33 @@ fn library_placeholders() -> Vec<Item> {
     vec![todo("Built-in Libraries"), todo("User Defined"), Sep, todo("Other Library…")]
 }
 
+/// `items` in the alphabetical order of their labels in the UI language, so a list that is A to Z
+/// in English stays A to Z in French (#4143). Case and accents don't count: `Échantillons` sorts
+/// with the E's. Japanese and Chinese keep the tree's order: their labels mix kanji or hanzi, whose
+/// code points aren't in an order a reader expects.
+fn alphabetical(mut items: Vec<Item>) -> Vec<Item> {
+    let lang = crate::i18n::current();
+    if ["ja", "zh-hans", "zh-hant"].contains(&lang.code()) {
+        return items;
+    }
+    items.sort_by_cached_key(|it| sort_key(crate::i18n::tr(lang, item_label(it))));
+    items
+}
+
+/// `label` lowercased without its accents, to sort by.
+fn sort_key(label: &str) -> String {
+    use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
+    label.nfd().filter(|c| !is_combining_mark(*c)).flat_map(char::to_lowercase).collect()
+}
+
+/// The tree's own English label of `it` (empty for a separator).
+fn item_label(it: &Item) -> &'static str {
+    match it {
+        Item::Cmd(label, ..) | Item::Todo(label, _) | Item::Sub(label, _) | Item::Header(label) => label,
+        Item::Sep => "",
+    }
+}
+
 use Item::Sep;
 
 /// UI-level commands: (id, label, shortcut, params doc).
@@ -3174,69 +3201,77 @@ pub fn menu_tree_named(english_names: bool) -> Vec<(&'static str, Vec<Item>)> {
         ),
         (
             "Window",
-            vec![
-                c("New Window", "window.newWindow"),
-                sub("Arrange", vec![todo("Cascade"), todo("Tile"), todo("Float in Window"), todo("Consolidate All Windows")]),
-                sub("Workspace", crate::workspaces::menu_items()),
-                Sep,
-                c("Control", "window.control"),
-                c("Contextual Task Bar", "window.taskBar"),
-                c("Tools", "window.toolbar"),
-                sub("Toolbars", vec![c("Advanced", "window.toolbarAdvanced"), c("Double Column", "window.toolbarColumns")]),
-                Sep,
-                panel("Actions", "actions"),
-                panel("Align", "align"),
-                panel("Appearance", "appearance"),
-                panel("Artboards", "artboards"),
-                panel("Asset Export", crate::panels::asset_export::ID),
-                panel("Attributes", "attributes"),
-                panel("Blend", crate::panels::blend::ID),
-                panel("Brushes", "brushes"),
-                panel("Color", "color"),
-                panel("Color Guide", "colorGuide"),
-                panel("Color Themes", "colorThemes"),
-                panel("CSS Properties", crate::panels::css_properties::ID),
-                panel("Document Info", "docInfo"),
-                panel("Flattener Preview", crate::panels::flattener_preview::ID),
-                panel("Gradient", "gradient"),
-                panel("Graphic Styles", "graphicStyles"),
-                panel("History", "history"),
-                panel("Image Trace", "imageTrace"),
-                panel("Info", "info"),
-                panel("Layers", "layers"),
-                panel("Libraries", "libraries"),
-                panel("Links", crate::panels::links::ID),
-                panel("Magic Wand", "magicWand"),
-                panel("Navigator", "navigator"),
-                panel("Pathfinder", "pathfinder"),
-                panel("Pattern Options", "patternOptions"),
-                panel("Properties", "properties"),
-                panel("Separations Preview", "separations"),
-                panel("Stroke", "stroke"),
-                panel("SVG Interactivity", crate::panels::svg_interactivity::ID),
-                panel("Swatches", "swatches"),
-                panel("Symbols", "symbols"),
-                panel("Transform", "transform"),
-                panel("Transparency", "transparency"),
-                sub(
-                    "Type",
-                    vec![
-                        panel("Character", "character"),
-                        panel("Character Styles", "charStyles"),
-                        panel("Glyphs", "glyphs"),
-                        panel("OpenType", "openType"),
-                        panel("Paragraph", "paragraph"),
-                        panel("Paragraph Styles", "paraStyles"),
-                        panel("Tabs", "tabs"),
-                    ],
-                ),
-                panel("Variables", crate::panels::variables::ID),
-                Sep,
-                sub("Brush Libraries", library_placeholders()),
-                sub("Graphic Style Libraries", crate::panels::graphic_styles::window_menu()),
-                sub("Swatch Libraries", crate::panels::swatches::window_menu()),
-                sub("Symbol Libraries", crate::panels::symbols::window_menu()),
-            ],
+            [
+                vec![
+                    c("New Window", "window.newWindow"),
+                    sub("Arrange", vec![todo("Cascade"), todo("Tile"), todo("Float in Window"), todo("Consolidate All Windows")]),
+                    sub("Workspace", crate::workspaces::menu_items()),
+                    Sep,
+                    c("Control", "window.control"),
+                    c("Contextual Task Bar", "window.taskBar"),
+                    c("Tools", "window.toolbar"),
+                    sub("Toolbars", vec![c("Advanced", "window.toolbarAdvanced"), c("Double Column", "window.toolbarColumns")]),
+                    Sep,
+                ],
+                // The panels and the libraries in the alphabetical order of the language shown.
+                alphabetical(vec![
+                    panel("Actions", "actions"),
+                    panel("Align", "align"),
+                    panel("Appearance", "appearance"),
+                    panel("Artboards", "artboards"),
+                    panel("Asset Export", crate::panels::asset_export::ID),
+                    panel("Attributes", "attributes"),
+                    panel("Blend", crate::panels::blend::ID),
+                    panel("Brushes", "brushes"),
+                    panel("Color", "color"),
+                    panel("Color Guide", "colorGuide"),
+                    panel("Color Themes", "colorThemes"),
+                    panel("CSS Properties", crate::panels::css_properties::ID),
+                    panel("Document Info", "docInfo"),
+                    panel("Flattener Preview", crate::panels::flattener_preview::ID),
+                    panel("Gradient", "gradient"),
+                    panel("Graphic Styles", "graphicStyles"),
+                    panel("History", "history"),
+                    panel("Image Trace", "imageTrace"),
+                    panel("Info", "info"),
+                    panel("Layers", "layers"),
+                    panel("Libraries", "libraries"),
+                    panel("Links", crate::panels::links::ID),
+                    panel("Magic Wand", "magicWand"),
+                    panel("Navigator", "navigator"),
+                    panel("Pathfinder", "pathfinder"),
+                    panel("Pattern Options", "patternOptions"),
+                    panel("Properties", "properties"),
+                    panel("Separations Preview", "separations"),
+                    panel("Stroke", "stroke"),
+                    panel("SVG Interactivity", crate::panels::svg_interactivity::ID),
+                    panel("Swatches", "swatches"),
+                    panel("Symbols", "symbols"),
+                    panel("Transform", "transform"),
+                    panel("Transparency", "transparency"),
+                    sub(
+                        "Type",
+                        alphabetical(vec![
+                            panel("Character", "character"),
+                            panel("Character Styles", "charStyles"),
+                            panel("Glyphs", "glyphs"),
+                            panel("OpenType", "openType"),
+                            panel("Paragraph", "paragraph"),
+                            panel("Paragraph Styles", "paraStyles"),
+                            panel("Tabs", "tabs"),
+                        ]),
+                    ),
+                    panel("Variables", crate::panels::variables::ID),
+                ]),
+                vec![Sep],
+                alphabetical(vec![
+                    sub("Brush Libraries", library_placeholders()),
+                    sub("Graphic Style Libraries", crate::panels::graphic_styles::window_menu()),
+                    sub("Swatch Libraries", crate::panels::swatches::window_menu()),
+                    sub("Symbol Libraries", crate::panels::symbols::window_menu()),
+                ]),
+            ]
+            .concat(),
         ),
         (
             "Help",
@@ -4495,6 +4530,36 @@ mod tests {
             app.run(id, json!({})).unwrap();
             assert_eq!(dynamic_label(&app, id, ""), off);
         }
+    }
+
+    /// The Window menu lists its panels, the Type panels and the libraries A to Z in the UI
+    /// language, accents aside, as it does in English (#4143); Japanese keeps the English order.
+    #[test]
+    fn window_menu_panels_are_alphabetical_in_the_ui_language() {
+        use crate::i18n::{Lang, set_current, tr};
+        // The Window menu's runs between separators, as English labels; the Type submenu's last.
+        let runs = |lang: Lang| {
+            set_current(lang);
+            let window = menu_tree().into_iter().find(|(title, _)| *title == "Window").map(|(_, items)| items).unwrap();
+            let type_panels = window.iter().find_map(|it| match it {
+                Item::Sub("Type", children) => Some(children.iter().map(item_label).collect::<Vec<_>>()),
+                _ => None,
+            });
+            let mut runs: Vec<Vec<&str>> = window.split(|it| matches!(it, Sep)).map(|run| run.iter().map(item_label).collect()).collect();
+            runs.push(type_panels.unwrap());
+            runs
+        };
+        let (fr, ja) = (Lang::from_code("fr").unwrap(), Lang::from_code("ja").unwrap());
+        let english = runs(Lang::EN);
+        let french = runs(fr);
+        for i in [2, 3, 4] {
+            let keys: Vec<String> = french[i].iter().map(|label| sort_key(tr(fr, label))).collect();
+            assert!(keys.is_sorted(), "run {i} in French: {keys:?}");
+            assert!(english[i].iter().map(|label| sort_key(label)).is_sorted(), "run {i} in English: {:?}", english[i]);
+        }
+        assert_ne!(french[2], english[2], "the panels sort by their French names");
+        assert_eq!(runs(ja), english);
+        set_current(Lang::EN);
     }
 
     /// Edit › Undo and Edit › Redo name the step in the UI language as the History panel lists it
