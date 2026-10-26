@@ -512,7 +512,8 @@ pub fn doc_tabs(app: &mut VectorcraftApp, ui: &mut Ui) {
         x += w;
     }
     crate::document_drag::finish_tabs(ui.ctx(), hovering_art);
-    // The » button: every open document, the active one checked.
+    // The » button: every open document, the active one checked, scrolling past the window's
+    // bottom (#4017).
     if overflow {
         let more = egui::Rect::from_min_max(egui::pos2(strip.right() - MORE, strip.top()), egui::pos2(strip.right(), strip.bottom() - 1.0));
         let resp = ui.interact(more, ui.scope_id().with("tabs-more"), Sense::click());
@@ -520,12 +521,14 @@ pub fn doc_tabs(app: &mut VectorcraftApp, ui: &mut Ui) {
         icons::paint(ui, "chevrons-right", egui::Rect::from_center_size(more.center(), vec2(14.0, 14.0)), t.text);
         let resp = resp.on_hover_text(tl!("Show all open documents"));
         egui::Popup::menu(&resp).show(|ui| {
-            for (i, (title, _)) in tabs.iter().enumerate() {
-                if widgets::menu_item_name(ui, title, true, Some(i) == active) {
-                    activate = Some(i);
-                    ui.close();
+            widgets::menu_scroll(ui, |ui| {
+                for (i, (title, _)) in tabs.iter().enumerate() {
+                    if widgets::menu_item_name(ui, title, true, Some(i) == active) {
+                        activate = Some(i);
+                        ui.close();
+                    }
                 }
-            }
+            });
         });
     }
     if let Some(i) = close {
@@ -1567,6 +1570,65 @@ mod tests {
         frame(&mut app, vec![press(false)]);
         assert_eq!(app.session.documents().len(), 1, "the × closed the first document");
         assert!(super::CLOSE_BEFORE_TITLE == cfg!(target_os = "macos"));
+    }
+
+    /// The » list of open documents scrolls when they don't fit in the window, so the last of many
+    /// can be chosen (#4017).
+    #[test]
+    fn the_list_of_open_documents_scrolls_to_the_last_of_many() {
+        let mut app = crate::VectorcraftApp::new(Session::new(), Default::default());
+        for _ in 0..60 {
+            app.session.execute("file.new", &json!({"width": 100, "height": 100})).unwrap();
+        }
+        app.session.set_active(0);
+        let last = app.session.documents().len() - 1;
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 400.0));
+        // The titles drawn where they can be seen: inside the window and their clip.
+        let frame = |app: &mut crate::VectorcraftApp, events: Vec<egui::Event>| {
+            let mut out = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), events, ..Default::default() }, |ui| super::doc_tabs(app, ui));
+            out.textures_delta.clear();
+            let mut titles = vec![];
+            for c in &out.shapes {
+                if let egui::Shape::Text(t) = &c.shape {
+                    let r = t.visual_bounding_rect();
+                    if screen.contains(r.center()) && c.clip_rect.contains(r.center()) {
+                        // A menu row's title follows the room for its check mark.
+                        titles.push((t.galley.text().trim().to_string(), r));
+                    }
+                }
+            }
+            titles
+        };
+        let strip = frame(&mut app, vec![]);
+        let y = strip.first().map(|(_, r)| r.center().y).unwrap();
+        let more = egui::pos2(screen.right() - 15.0, y);
+        let press = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(&mut app, vec![egui::Event::PointerMoved(more), press(more, true)]);
+        frame(&mut app, vec![press(more, false)]);
+        let listed = frame(&mut app, vec![]);
+        let below = |titles: &[(String, egui::Rect)]| titles.iter().filter(|(_, r)| r.center().y > y + 10.0).cloned().collect::<Vec<_>>();
+        let first_listed = below(&listed).first().map(|(_, r)| r.center()).unwrap();
+        let title = {
+            let d = &app.session.documents()[last];
+            super::tab_title(d, app.views.get(last).map(|v| v.zoom).unwrap_or(1.0), app.ui.view.outline, app.session.prefs.display_print_size)
+        };
+        assert!(!below(&listed).iter().any(|(t, _)| *t == title), "the last document is past the window's bottom at first");
+        let wheel = egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -5000.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Default::default(),
+            source: egui::MouseWheelSource::Unknown,
+        };
+        frame(&mut app, vec![egui::Event::PointerMoved(first_listed), wheel]);
+        let scrolled = (0..5).map(|_| frame(&mut app, vec![])).last().unwrap();
+        let at = below(&scrolled).into_iter().find(|(t, _)| *t == title).map(|(_, r)| r.center());
+        let at = at.unwrap_or_else(|| panic!("the last document scrolls into view: {:?}", below(&scrolled)));
+        frame(&mut app, vec![egui::Event::PointerMoved(at), press(at, true)]);
+        frame(&mut app, vec![press(at, false)]);
+        assert_eq!(app.session.active_index(), Some(last));
     }
 
     /// One headless frame of the status bar; returns the artboard navigator's buttons, left to
